@@ -110,25 +110,25 @@ def reshape_to_3d(flat_list):
     return grid  # grid[y][z][x]
 
 # Convert minecraft blocks into a code
-block_encoding = {
-    'water': -1,
-    'air': 0,
-    'purpur_slab': 1,
-    'stone_slab': 2,
-    'stone': 0,
-    'gold_block': 3
-}
+# block_encoding = {
+#     'water': -1,
+#     'air': 0,
+#     'purpur_slab': 1,
+#     'stone_slab': 2,
+#     'stone': 0,
+#     'gold_block': 3
+# }
 
 def reshape_nearby_blocks(nb):
-    nearby_blocks = [nb[:9], nb[9:18], nb[18:]]
+    nearby_blocks = [tuple(nb[:9]), tuple(nb[9:18]), tuple(nb[18:])]
     return nearby_blocks
 
-def encode_nearby_blocks(nb):
-    encoded = []
-    for l in nb:
-        encoded_layer = tuple(block_encoding[b] for b in l)
-        encoded.append(encoded_layer)
-    return tuple(encoded)
+# def encode_nearby_blocks(nb):
+#     encoded = []
+#     for l in nb:
+#         encoded_layer = tuple(block_encoding[b] for b in l)
+#         encoded.append(encoded_layer)
+#     return tuple(encoded)
     
 
 class Prisoner(object):
@@ -140,7 +140,7 @@ class Prisoner(object):
             gamma:  <float>  value decay rate   (default = 1)
             n:      <int>    number of back steps to update (default = 1)
         """
-        self.epsilon = 0.4  # chance of taking a random action instead of the best
+        self.epsilon = 0.3  # chance of taking a random action instead of the best
         self.epsilon_min = 0.1
         self.epsilon_decay = 0.95 # implement epsilon decay (decay by 5% after each episode)
         self.q_table = {}
@@ -155,6 +155,7 @@ class Prisoner(object):
         # Define actions
         # self.actions = {0: ("move 1",), 1: ("jump 1",), 2: ("turn 1",), 3: ("turn -1",)}
         self.actions = ["move 1", "move -1", "jump 1", "strafe -1", "strafe 1"]
+#         self.actions = ["move 1", "move -1", "jump 1", "strafe -1", "turn 1"]
         self.num_actions = len(self.actions)
 
     def inc_num_actions_taken(self):
@@ -165,7 +166,9 @@ class Prisoner(object):
    
     def get_state(self, obs):
         # Return agent's location and nearby blocks from a 3x3 cube around the agent
-        nearby_blocks = encode_nearby_blocks(reshape_nearby_blocks(obs['agent_nearby_blocks']))
+#         nearby_blocks = encode_nearby_blocks(reshape_nearby_blocks(obs['agent_nearby_blocks']))
+        nearby_blocks = tuple(reshape_nearby_blocks(obs['agent_nearby_blocks']))
+#         print(nearby_blocks)
 
         return (
             int(round(obs.get("XPos", 0))),
@@ -192,16 +195,28 @@ class Prisoner(object):
         # nearby_blocks[1] = agent level
         # nearby_blocks[2] = above agent's head
         
-        if all(block_encoding["water"] for i in nb[0]) and nb[1][4] == block_encoding["air"]:
+#         if all(block_encoding["water"] for i in nb[0]) and nb[1][4] == block_encoding["air"]:
+#             # if water is surrounding agent --> agent fell
+#             return 'jump 1'
+#         elif nb[2][4] in [block_encoding['stone_slab'], block_encoding['purpur_slab']]:
+#             return 'jump 1'
+#         elif nb[1][7] in [block_encoding['stone_slab'], block_encoding['purpur_slab']]:
+#             return 'move 1'
+#         elif nb[1][3] == block_encoding['stone_slab']:  # left
+#             return 'strafe -1'
+#         elif nb[1][5] == block_encoding['stone_slab']:  # right
+#             return 'strafe 1'
+#         return None 
+        if nb[0].count('water') == len(nb[0]) and nb[1][4] == ["air"]:
             # if water is surrounding agent --> agent fell
             return 'jump 1'
-        elif nb[2][4] in [block_encoding['stone_slab'], block_encoding['purpur_slab']]:
+        elif nb[2][4] in ['stone_slab', 'purpur_slab']:
             return 'jump 1'
-        elif nb[1][7] in [block_encoding['stone_slab'], block_encoding['purpur_slab']]:
+        elif nb[1][7] in ['stone_slab', 'purpur_slab']:
             return 'move 1'
-        elif nb[1][3] == block_encoding['stone_slab']:  # left
+        elif nb[1][3] == ['stone_slab']:  # left
             return 'strafe -1'
-        elif nb[1][5] == block_encoding['stone_slab']:  # right
+        elif nb[1][5] == ['stone_slab']:  # right
             return 'strafe 1'
         return None 
     
@@ -219,7 +234,8 @@ class Prisoner(object):
     
     # Q-value update
     def update_q(self, state, action, reward, next_state):
-        print("state:", state, "reward:", reward, "action:", action, "next_state:", next_state)
+#         print("state:", state, "reward:", reward, "action:", action, "next_state:", next_state)
+        print("reward:", reward, "action:", action)
         
         if state not in self.q_table:
             self.q_table[state] = {a: 0 for a in self.actions}
@@ -227,12 +243,14 @@ class Prisoner(object):
             self.q_table[next_state] = {a: 0 for a in self.actions}
             
         # Add heuristic to adjust reward
-        heuristic_reward = self.calc_heuristic(next_state)
-        w = 0.1
-        adjusted_reward = reward + w * heuristic_reward
+#         heuristic_reward = self.calc_heuristic(next_state)
+#         w = 0.1
+#         adjusted_reward = reward + w * heuristic_reward
         
         max_future_q = max(self.q_table[next_state].values())
-        self.q_table[state][action] += self.alpha * (adjusted_reward + self.gamma * max_future_q - self.q_table[state][action])
+        self.q_table[state][action] += self.alpha * (reward + self.gamma * max_future_q - self.q_table[state][action])
+
+#         self.q_table[state][action] += self.alpha * (adjusted_reward + self.gamma * max_future_q - self.q_table[state][action])
 
     def calc_reward(self, obs, prev_y, nearby_blocks):
         
@@ -241,7 +259,8 @@ class Prisoner(object):
         
         # Current y position and current block
         agent_y = obs["YPos"]
-        cur_block = obs["current_block"]
+        cur_block = obs["current_block"][0]
+        print('cur_block', cur_block)
         
         if self.fell_in_water(obs):
             reward -= 100
@@ -259,9 +278,6 @@ class Prisoner(object):
             reward += 25
         elif cur_block =='gold_block':
             reward += 500 # goal reached
-        else:
-            # most likely water
-            reward -=50
         
         # Reward agent for being close to gold block
         if any('gold_block' in layer for layer in nearby_blocks):
@@ -270,13 +286,15 @@ class Prisoner(object):
         # Award for being on/nearby a slab
         nearby_slabs = 0
         for i in range(3):
-            for j in nearby_blocks[i]:
-                if nearby_blocks[i][j] in ['stone_slab', 'purpur_slab']:
+            print(nearby_blocks[i])
+            for j in range(len(nearby_blocks[i])):
+                if nearby_blocks[i][j] in ['stone_slab', 'purpur_slab', 'gold_block']:
                     nearby_slabs += 1
+                    print("NEAR GOOD BLOCK")
         reward += 10 * nearby_slabs 
         
-        # Penalize agent for the more steps they take
-#         reward -= self.num_actions_taken
+        # Penalize agent for the more steps they take by some weight * number of actions taken
+#         reward -= (self.num_actions_taken * 0.75)
         
         # accumulate reward for overall mission
         self.reward += reward
@@ -317,7 +335,7 @@ if __name__ == '__main__':
 #         mission_xml = f.read()
 
     episodes = 5
-    prisoner = Prisoner()
+    prisoner = Prisoner(alpha=0.30)
     for episode in range(episodes):
         print("Episode" + str(episode+1))
 
@@ -403,8 +421,8 @@ if __name__ == '__main__':
                 prev_action = action
                 
                 # Every once in a while, print the Q table
-                if prisoner.get_num_actions_taken() % 1000 == 0:
-                    print("Current Q-table:", prisoner.q_table)
+#                 if prisoner.get_num_actions_taken() % 1000 == 0:
+#                     print("Current Q-table:", prisoner.q_table)
                
                 
         end = time.time()
