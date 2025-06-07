@@ -107,6 +107,7 @@ def reshape_to_3d(flat_list):
 def reshape_nearby_blocks(nb):
     nearby_blocks = [tuple(nb[:9]), tuple(nb[9:18]), tuple(nb[18:])]
     return nearby_blocks
+    
 
 class Prisoner(object):
     def __init__(self, alpha=0.3, gamma=0.99, n=1):
@@ -143,6 +144,9 @@ class Prisoner(object):
    
     def get_state(self, obs):
         # Return agent's location and nearby blocks from a 3x3 cube around the agent
+        if 'agent_nearby_blocks' not in obs:
+            return None  # Can't compute state
+    
         nearby_blocks = tuple(reshape_nearby_blocks(obs['agent_nearby_blocks']))
 
         return (
@@ -163,7 +167,7 @@ class Prisoner(object):
             return False
       
     
-   # Provide some guidance to random action based on nearby blocks
+    # Provide some guidance to random action based on nearby blocks
     def bias_random_action(self, nb):
         # nearby_blocks = 3x3
         # nearby_blocks[0] = floor
@@ -210,8 +214,8 @@ class Prisoner(object):
         _, _, _, _, nearby_blocks = state
         if random.random() < self.epsilon or state not in self.q_table:
             biased_action = self.bias_random_action(nearby_blocks)
-            # TODO: Maybe change probability of biased action?
             if biased_action and random.random() < 1:
+                # 70% prob of baised random action
                 return biased_action
             return random.choice(self.actions)
         return max(self.q_table[state], key=self.q_table[state].get)
@@ -229,12 +233,18 @@ class Prisoner(object):
             
         if action not in self.actions:
             self.q_table[state][action] = 0
+            
+        # Add heuristic to adjust reward
+#         heuristic_reward = self.calc_heuristic(next_state)
+#         w = 0.1
+#         adjusted_reward = reward + w * heuristic_reward
         
         max_future_q = max(self.q_table[next_state].values())
         self.q_table[state][action] += self.alpha * (reward + self.gamma * max_future_q - self.q_table[state][action])
+#         self.q_table[state][action] += self.alpha * (adjusted_reward + self.gamma * max_future_q - self.q_table[state][action])
 
     def calc_reward(self, obs, prev_y, nearby_blocks):
-
+        
         # Compute Reward
         reward = 0
         
@@ -322,103 +332,112 @@ if __name__ == '__main__':
     if agent_host.receivedArgument("help"):
         print(agent_host.getUsage())
         exit(0)
-    
-    # load world from xml
-#     mission_file = 'finalworld.xml'
-#     with open(mission_file, 'r') as f:
-#         print("Loading mission from %s" % mission_file)
-#         mission_xml = f.read()
 
     episodes = 5
     prisoner = Prisoner(alpha=0.30)
+    
     for episode in range(episodes):
         print("Episode" + str(episode+1))
-
-        mission_xml = create_mission()
-        mission_spec = MalmoPython.MissionSpec(mission_xml, True)
-        mission_record = MalmoPython.MissionRecordSpec()
-
-        # Attempt to start mission
-        for retry in range(3):
-            try:
-                agent_host.startMission(mission_spec, my_client_pool, mission_record, 0, "Prisoner")
-                break
-            except RuntimeError as e:
-                if retry == 2:
-                    print("Error starting mission", e)
-                    print("Is the game running?")
-                else:
-                    time.sleep(2)
-
-        # Wait for mission to start
-        print("Waiting for mission to start...")
-        world_state = agent_host.getWorldState()
-        while not world_state.has_mission_begun:
-            time.sleep(0.1)
-            world_state = agent_host.getWorldState()
-
-        total_reward = 0
-        prev_state = None
-        prev_action = None
-        prev_y = None
-        timedout = False
-        
         local_time = time.localtime()
         formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", local_time) + " (UTC)"
         print("Start Time:", formatted_time)
         start = time.time()
-        
-        # Main loop
-        while world_state.is_mission_running:
-            
-#             Check Timeout
-            if (time.time() - start) > prisoner.TIMEOUT:
-                print("\nTime limit exceeded. Ending mission.")
-                agent_host.sendCommand("quit")  # Exit mission
-                timedout = True
-                break
-            
+
+        while True:
+            mission_xml = create_mission()
+            mission_spec = MalmoPython.MissionSpec(mission_xml, True)
+            mission_record = MalmoPython.MissionRecordSpec()
+
+            # Attempt to start mission
+            for retry in range(3):
+                try:
+                    agent_host.startMission(mission_spec, my_client_pool, mission_record, 0, "Prisoner")
+                    break
+                except RuntimeError as e:
+                    if retry == 2:
+                        print("Error starting mission", e)
+                        print("Is the game running?")
+                    else:
+                        time.sleep(2)
+
+            # Wait for mission to start
+            print("Waiting for mission to start...")
             world_state = agent_host.getWorldState()
-            if world_state.number_of_observations_since_last_state > 0:
-                obs_text = world_state.observations[-1].text
-                obs = json.loads(obs_text)
-                state = prisoner.get_state(obs)
-                
-                if prev_y is None:
-                    prev_y = state[1]
+            while not world_state.has_mission_begun:
+                time.sleep(0.1)
+                world_state = agent_host.getWorldState()
 
-                action = prisoner.choose_action(state)
-                if type(action) != str:
-                    for command in action:
-                        print("COMMAND: " + command)
-                        agent_host.sendCommand(command)
-                        time.sleep(0.2)
-                else:
-                    agent_host.sendCommand(action)
+            total_reward = 0
+            prev_state = None
+            prev_action = None
+            prev_y = None
+            timedout = False
+            failed = False
+            
+            # Main loop
+            while world_state.is_mission_running:
 
-                prisoner.inc_num_actions_taken()
+    #             Check Timeout
+                if (time.time() - start) > prisoner.TIMEOUT:
+                    print("\nTime limit exceeded. Ending mission.")
+                    agent_host.sendCommand("quit")  # Exit mission
+                    timedout = True
+                    break
 
-                time.sleep(1)
-
-                # Get updated world state and observation
                 world_state = agent_host.getWorldState()
                 if world_state.number_of_observations_since_last_state > 0:
-                    new_obs_text = world_state.observations[-1].text
-                    new_obs = json.loads(new_obs_text)
+                    obs_text = world_state.observations[-1].text
+                    obs = json.loads(obs_text)
+                    state = prisoner.get_state(obs)
+                    
+                    if state is None:
+                        continue  # Skip this loop iteration until observation is valid
 
-                    new_state = prisoner.get_state(new_obs)
-                    reward = prisoner.calc_reward(new_obs, prev_y, new_state[4])
-                
-                if prev_state != None and prev_action != None:
-                    prisoner.update_q(prev_state, prev_action, reward, state)
-                
-                prev_state = state
-                prev_action = action
-                
-                # Every once in a while, print the Q table
-#                 if prisoner.get_num_actions_taken() % 1000 == 0:
-#                     print("Current Q-table:", prisoner.q_table)
+                    if prev_y is None:
+                        prev_y = state[1]
+
+                    action = prisoner.choose_action(state)
+                    if type(action) != str:
+                        for command in action:
+                            agent_host.sendCommand(command)
+                            time.sleep(0.2)
+                    else:
+                        agent_host.sendCommand(action)
+
+                    prisoner.inc_num_actions_taken()
+
+                    time.sleep(1)
+
+                    # Get updated world state and observation
+                    world_state = agent_host.getWorldState()
+                    if world_state.number_of_observations_since_last_state > 0:
+                        new_obs_text = world_state.observations[-1].text
+                        new_obs = json.loads(new_obs_text)
+
+                        new_state = prisoner.get_state(new_obs)
+                        reward = prisoner.calc_reward(new_obs, prev_y, new_state[4])
+
+                    if prev_state != None and prev_action != None:
+                        prisoner.update_q(prev_state, prev_action, reward, state)
+
+                    prev_state = state
+                    prev_action = action
+                    
+                    if prisoner.fell_in_water(obs):
+                        failed = True
+                        agent_host.sendCommand("quit")
+                        break
                
+            if timedout:
+                print("Timeout. Episode failed.")
+            elif failed:
+                print("Resetting episode due to failure...\n")
+                time.sleep(2)
+                continue  # Restart this episode (same index)
+            else:
+                print("Goal reached!")
+                # Episode success -> break and go to next episode
+                break
                 
         end = time.time()
         length = end - start
@@ -426,8 +445,6 @@ if __name__ == '__main__':
         formatted_time = formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", local_time) + " (UTC)"
         print("End Time:", formatted_time)
         print("Time elapsed:", length, "seconds")
-        if not timedout:
-            print("Goal reached!")
         
         # At the end of each episode, reduce the epsilon
         if prisoner.epsilon > prisoner.epsilon_min:
