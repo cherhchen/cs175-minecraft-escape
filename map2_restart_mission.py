@@ -265,17 +265,18 @@ class Prisoner(object):
                 rstr += "y " + str(agent_y) + " -20, "
         
         # Award agent based on current block they are standing on
-        if cur_block =='purpur_slab':
+        if cur_block =='purpur_slab': # usually does not register because agent is in air
             reward += 50
             rstr += "ppslab +50, "
-        elif cur_block =='stone_slab':
+        elif cur_block =='stone_slab': # usually does not register because agent is in air
             reward += 250
             rstr += "stone_slab +250, "
         elif cur_block =='gold_block':
             reward += 500 # goal reached
             rstr += "gold +500, "
         elif cur_block == 'air' and agent_y >= 4:
-            reward += 2 ** math.floor(agent_y) * 10
+            # If agent is in the air, reward based on height
+            reward += 2 ** math.floor(agent_y) * 10 # exponential
             rstr += "air " + "+" + str(2 ** math.floor(agent_y) * 10) + ", "
         
         # Reward agent for being close to gold block
@@ -294,6 +295,7 @@ class Prisoner(object):
                         rstr += "near slab +10, "
             reward += 10 * nearby_slabs 
         else:
+            # Useful when we do not restart mission after agent falls in the water
             distance = self.dist_from_start((obs["XPos"], obs["YPos"],obs["ZPos"]))
             reward -= 10 * 3 ** distance
             rstr += "far from start " + str(10 * 3 ** distance) + ", "
