@@ -424,6 +424,7 @@ if __name__ == '__main__':
 
                     prev_state = state
                     prev_action = action
+                    prev_y = state[1]
                     
                     if prisoner.fell_in_water(obs):
                         failed = True

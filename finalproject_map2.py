@@ -416,6 +416,7 @@ if __name__ == '__main__':
                 
                 prev_state = state
                 prev_action = action
+                prev_y = state[1]
                 
                 # Every once in a while, print the Q table
 #                 if prisoner.get_num_actions_taken() % 1000 == 0:
